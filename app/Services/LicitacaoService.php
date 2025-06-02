@@ -138,6 +138,7 @@ class LicitacaoService
             'telefone' => '',
             'fax' => '',
             'entrega_proposta' => '',
+            'itens_download_url' => '',
         ];
 
         if (isset($linhasTexto[0])) {
@@ -200,6 +201,65 @@ class LicitacaoService
                 $v = preg_replace('/^Entrega da Proposta:\s*/iu', '', $linha, 1);
                 $item['entrega_proposta'] = $this->normalizeSpaces($v);
                 continue;
+            }
+        }
+
+        $xpath = new \DOMXPath($dom);
+
+        $exprInput = ".//input[
+            contains(
+                translate(@onclick,
+                    'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+                    'abcdefghijklmnopqrstuvwxyz'
+                ),
+                'visualizaritens'
+            )
+        ]";
+        $inputs = $xpath->query($exprInput, $form);
+
+        $onclick = '';
+
+        if ($inputs->length > 0) {
+            $node = $inputs->item(0);
+            if ($node instanceof \DOMElement) {
+                $onclick = $node->getAttribute('onclick');
+            }
+        } else {
+            $exprLink = ".//a[
+                contains(
+                    translate(@onclick,
+                        'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+                        'abcdefghijklmnopqrstuvwxyz'
+                    ),
+                    'visualizaritens'
+                )
+            ]";
+            $links = $xpath->query($exprLink, $form);
+
+            if ($links->length > 0) {
+                $node = $links->item(0);
+                if ($node instanceof \DOMElement) {
+                    $onclick = $node->getAttribute('onclick');
+                }
+            }
+        }
+
+        if ($onclick !== '') {
+            if (preg_match(
+                "/visualizaritens\s*\(\s*document\.([^,]+)\s*,\s*'([^']+)'\s*\)/i",
+                $onclick,
+                $m
+            )) {
+                $queryString = $m[2];
+
+                $queryString = str_replace(
+                    ['modppr=', 'numppr='],
+                    ['modprp=', 'numprp='],
+                    $queryString
+                );
+
+                $baseUrlItens = 'https://comprasnet.gov.br/ConsultaLicitacoes/download/download_editais_detalhe.asp';
+                $item['itens_download_url'] = $baseUrlItens . $queryString;
             }
         }
 
