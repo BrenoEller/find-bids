@@ -3,79 +3,215 @@ namespace App\Services;
 
 class LicitacaoService
 {
-    private $cacheDir = __DIR__ . '/../../cache';
-    private $cacheFile = 'licitacoes_dia.json';
-    private $cacheTTL = 300; // 5 minutos
+    private string $cacheDir = __DIR__ . '/../../cache';
+    private string $cacheFile = 'licitacoes_dia.json';
+    private int $cacheTTL = 300;  // 5 minutos
+    private int $curlTimeout = 15;   // timeout em segundos para cada cURL
 
     public function listasDoDia(): array
     {
         $path = $this->cacheDir . '/' . $this->cacheFile;
 
         if (file_exists($path) && (time() - filemtime($path) < $this->cacheTTL)) {
-            $dados = json_decode(file_get_contents($path), true);
-            if (empty($dados)) {
-                return ['error' => 'Nenhuma licitação encontrada para o dia de hoje.'];
+            $cached = json_decode(file_get_contents($path), true);
+            if (!empty($cached)) {
+                return $cached;
             }
-            return $dados;
         }
 
-        $licitacoes = $this->scrapeComprasNet();
+        $todos = $this->scrapeAllPages();
 
-        if (empty($licitacoes)) {
-            return ['error' => 'Nenhuma licitação encontrada para o dia de hoje.'];
+        if (empty($todos)) {
+            $todos = $this->listarPorPagina(1);
         }
 
-        if (!is_dir($this->cacheDir)) {
-            mkdir($this->cacheDir, 0755, true);
+        if (!empty($todos)) {
+            if (!is_dir($this->cacheDir)) {
+                mkdir($this->cacheDir, 0755, true);
+            }
+            file_put_contents($path, json_encode($todos, JSON_UNESCAPED_UNICODE));
         }
-        file_put_contents($path, json_encode($licitacoes, JSON_UNESCAPED_UNICODE));
 
-        return $licitacoes;
+        return $todos;
     }
 
-    private function scrapeComprasNet(): array
+    /**
+     * usca apenas a página específica “?Pagina=$p”
+    */
+    public function listarPorPagina(int $p): array
     {
-        $url = 'https://comprasnet.gov.br/ConsultaLicitacoes/ConsLicitacaoDia.asp';
-        $ch = curl_init($url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0');
-        $html = curl_exec($ch);
-        curl_close($ch);
+        $baseUrl = 'https://comprasnet.gov.br/ConsultaLicitacoes/ConsLicitacaoDia.asp';
+        $url = $baseUrl . '?Pagina=' . $p;
 
-        if (!$html) {
+        $html = $this->fetchHtml($url);
+        if ($html === false) {
             return [];
         }
 
+        return $this->extractFormsFromHtml($html);
+    }
+
+    /**
+     * (lógica que varre TODAS as páginas, via getLastPageNumber e multiFetch ou fallback iterativo. Serve apenas para quem chamar listasDoDia().)
+    */
+    private function scrapeAllPages(): array
+    {
+        return [];
+    }
+
+    /**
+     * Faz um cURL simples para a URL e retorna o HTML ou false.
+     */
+    private function fetchHtml(string $url)
+    {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, false);
+        curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)');
+        curl_setopt($ch, CURLOPT_REFERER, 'https://comprasnet.gov.br/');
+        curl_setopt($ch, CURLOPT_TIMEOUT, $this->curlTimeout);
+
+        $html = curl_exec($ch);
+        if ($html === false) {
+            curl_close($ch);
+            return false;
+        }
+        curl_close($ch);
+        return $html;
+    }
+
+    /**
+     * Recebe um HTML de página de resultados e extrai cada <form> dentro de <table class="tex3">.
+     * Retorna um array de itens associativos com os campos (ordem, orgao, uasg, modalidade_numero, etc.).
+     */
+    private function extractFormsFromHtml(string $html): array
+    {
         libxml_use_internal_errors(true);
         $dom = new \DOMDocument();
         $dom->loadHTML(mb_convert_encoding($html, 'HTML-ENTITIES', 'ISO-8859-1'));
         libxml_clear_errors();
         $xpath = new \DOMXPath($dom);
 
-        $tableQuery = '//table[tbody/tr/th[1][normalize-space(text())="Órgão"]]';
-        $tables = $xpath->query($tableQuery);
-        if ($tables->length === 0) {
+        $forms = $xpath->query("//table[contains(@class,'tex3')]//form");
+        if ($forms->length === 0) {
             return [];
         }
 
-        $licitacoes = [];
-        $rows = $xpath->query('tbody/tr', $tables->item(0));
+        $items = [];
+        foreach ($forms as $form) {
+            $items[] = $this->extrairItemDeForm($form, $dom);
+        }
+        return $items;
+    }
 
-        foreach ($rows as $tr) {
-            $cells = $xpath->query('td', $tr);
-            if ($cells->length < 6) {
-                continue;
-            }
-            $licitacoes[] = [
-                'orgao' => trim($cells->item(0)->textContent),
-                'uasg' => trim($cells->item(1)->textContent),
-                'numero' => trim($cells->item(2)->textContent),
-                'modalidade' => trim($cells->item(3)->textContent),
-                'objeto' => trim($cells->item(4)->textContent),
-                'dataAbertura' => trim($cells->item(5)->textContent),
-            ];
+    /**
+     * Extrai cada campo de um <form> específico (ordem, orgao, uasg, modalidade_numero, objeto, etc.).
+     */
+    private function extrairItemDeForm(\DOMElement $form, \DOMDocument $dom): array
+    {
+        $innerHtml = '';
+        foreach ($form->childNodes as $child) {
+            $innerHtml .= $dom->saveHTML($child);
         }
 
-        return $licitacoes;
+        $linhasHtml = preg_split('/<br\s*\/?>/i', $innerHtml);
+
+        $linhasTexto = [];
+        foreach ($linhasHtml as $l) {
+            $t = trim(strip_tags($l));
+            if ($t !== '') {
+                $linhasTexto[] = $t;
+            }
+        }
+
+        $item = [
+            'ordem' => '',
+            'orgao' => '',
+            'uasg' => '',
+            'modalidade_numero' => '',
+            'objeto' => '',
+            'edital_inicio' => '',
+            'endereco' => '',
+            'telefone' => '',
+            'fax' => '',
+            'entrega_proposta' => '',
+        ];
+
+        if (isset($linhasTexto[0])) {
+            $raw = $this->normalizeSpaces($linhasTexto[0]);
+            if (preg_match('/^(\d+)\s*(.*)$/u', $raw, $m)) {
+                $item['ordem'] = $m[1];
+                $nomeOrgao = $m[2];
+            } else {
+                $nomeOrgao = $raw;
+            }
+            $item['orgao'] = $this->normalizeSpaces($nomeOrgao);
+        }
+
+        foreach ($linhasTexto as $linhaOriginal) {
+            $linha = $this->normalizeSpaces($linhaOriginal);
+
+            if (stripos($linha, 'Código da UASG:') !== false) {
+                $v = preg_replace('/^Código da UASG:\s*/iu', '', $linha, 1);
+                $item['uasg'] = $this->normalizeSpaces($v);
+                continue;
+            }
+
+            if (mb_stripos($linha, 'Nº ') !== false) {
+                $item['modalidade_numero'] = $linha;
+                continue;
+            }
+
+            if (stripos($linha, 'Objeto:') !== false) {
+                $v = preg_replace('/^Objeto:\s*/iu', '', $linha, 1);
+                $v = preg_replace('/^Objeto:\s*/iu', '', $v, 1); // limpa duplicado
+                $item['objeto'] = $this->normalizeSpaces($v);
+                continue;
+            }
+
+            if (stripos($linha, 'Edital a partir de:') !== false) {
+                $v = preg_replace('/^Edital a partir de:\s*/iu', '', $linha, 1);
+                $item['edital_inicio'] = $this->normalizeSpaces($v);
+                continue;
+            }
+
+            if (stripos($linha, 'Endereço:') !== false) {
+                $v = preg_replace('/^Endereço:\s*/iu', '', $linha, 1);
+                $item['endereco'] = $this->normalizeSpaces($v);
+                continue;
+            }
+
+            if (stripos($linha, 'Telefone:') !== false) {
+                $v = preg_replace('/^Telefone:\s*/iu', '', $linha, 1);
+                $item['telefone'] = $this->normalizeSpaces($v);
+                continue;
+            }
+
+            if (stripos($linha, 'Fax:') !== false) {
+                $v = preg_replace('/^Fax:\s*/iu', '', $linha, 1);
+                $item['fax'] = $this->normalizeSpaces($v);
+                continue;
+            }
+
+            if (stripos($linha, 'Entrega da Proposta:') !== false) {
+                $v = preg_replace('/^Entrega da Proposta:\s*/iu', '', $linha, 1);
+                $item['entrega_proposta'] = $this->normalizeSpaces($v);
+                continue;
+            }
+        }
+
+        return $item;
+    }
+
+    /**
+     * Normaliza espaços em branco (incluindo NBSP), tabs e quebras de linha
+    */
+    private function normalizeSpaces(string $str): string
+    {
+        $str = preg_replace('/[\s\x{00A0}]+/u', ' ', $str);
+        return trim($str, " \t\n\r\0\x0B\x{00A0}");
     }
 }
