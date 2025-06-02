@@ -214,4 +214,60 @@ class LicitacaoService
         $str = preg_replace('/[\s\x{00A0}]+/u', ' ', $str);
         return trim($str, " \t\n\r\0\x0B\x{00A0}");
     }
+
+    /**
+     * Busca todas as licitações que tenham exatamente o código de UASG passado.
+     * Interrompe se detectar que o gov “voltou” para a página 1 em vez de entregar vazio.
+    */
+    public function listarPorUasg(string $codigoUasg): array
+    {
+        $codigoUasg = trim($codigoUasg);
+        $baseUrl = 'https://comprasnet.gov.br/ConsultaLicitacoes/ConsLicitacaoDia.asp';
+
+        $pagina = 1;
+        $html1 = $this->fetchHtml($baseUrl . '?Pagina=1');
+        if ($html1 === false) {
+            return []; 
+        }
+
+        $itensPagina1 = $this->extractFormsFromHtml($html1);
+        if (!empty($itensPagina1)) {
+            foreach ($itensPagina1 as $item) {
+                if (isset($item['uasg']) && trim($item['uasg']) === $codigoUasg) {
+                    return [$item];
+                }
+            }
+        }
+
+        $assinaturaPrimeiro = $itensPagina1[0]['ordem'] ?? null;
+
+        $pagina = 2;
+        while (true) {
+            $url  = $baseUrl . '?Pagina=' . $pagina;
+            $html = $this->fetchHtml($url);
+            if ($html === false) {
+                break;
+            }
+
+            $itensDaPagina = $this->extractFormsFromHtml($html);
+            if (empty($itensDaPagina)) {
+                break;
+            }
+
+            $primeiroDaPagina = $itensDaPagina[0]['ordem'] ?? null;
+            if ($primeiroDaPagina !== null && $primeiroDaPagina === $assinaturaPrimeiro) {
+                break;
+            }
+
+            foreach ($itensDaPagina as $item) {
+                if (isset($item['uasg']) && trim($item['uasg']) === $codigoUasg) {
+                    return [$item];
+                }
+            }
+
+            $pagina++;
+        }
+
+        return []; 
+    }
 }

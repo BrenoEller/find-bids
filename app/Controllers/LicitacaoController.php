@@ -7,9 +7,7 @@ class LicitacaoController
 {
     public function index(): string
     {
-        $pagina = isset($_GET['pagina']) && is_numeric($_GET['pagina'])
-                    ? (int) $_GET['pagina']
-                    : null;
+        $pagina = isset($_GET['pagina']) && is_numeric($_GET['pagina']) ? (int) $_GET['pagina'] : null;
 
         $service = new LicitacaoService();
 
@@ -27,5 +25,23 @@ class LicitacaoController
 
         $dados = $service->listasDoDia();
         return json_encode($dados, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
+    }
+
+    public function findByUasg(array $params): string
+    {
+        $codigoUasg = trim($params['codigo'] ?? '');
+
+        $service = new LicitacaoService();
+        $itens = $service->listarPorUasg($codigoUasg);
+
+        if (empty($itens)) {
+            http_response_code(404);
+            return json_encode(
+                ['error' => "Nenhuma licitação encontrada para UASG {$codigoUasg}."],
+                JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT
+            );
+        }
+
+        return json_encode($itens, JSON_UNESCAPED_UNICODE | JSON_PRETTY_PRINT);
     }
 }

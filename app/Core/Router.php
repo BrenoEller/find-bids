@@ -30,15 +30,31 @@ class Router
             return json_encode(['error' => 'Rota não encontrada'], JSON_UNESCAPED_UNICODE);
         }
 
-        if (isset($this->routes[$method][$uri])) {
-            $handler = $this->routes[$method][$uri];
+        foreach ($this->routes[$method] as $pathPattern => $handler) {
 
-            if (is_array($handler)) {
-                [$controllerClass, $methodName] = $handler;
-                return (new $controllerClass())->{$methodName}();
+            $regex = preg_replace_callback(
+                '/\{([^\/]+)\}/',
+                fn($matches) => '(?P<' . $matches[1] . '>[^\/]+)',
+                $pathPattern
+            );
+
+            $regex = '#^' . str_replace('/', '\/', $regex) . '$#';
+
+            if (preg_match($regex, $uri, $matches)) {
+
+                $params = [];
+                foreach ($matches as $key => $value) {
+                    if (!is_int($key)) {
+                        $params[$key] = $value;
+                    }
+                }
+
+                if (is_array($handler)) {
+                    [$controllerClass, $methodName] = $handler;
+                    return (new $controllerClass())->{$methodName}($params);
+                }
+                return call_user_func($handler, $params);
             }
-
-            return call_user_func($handler);
         }
 
         http_response_code(404);
