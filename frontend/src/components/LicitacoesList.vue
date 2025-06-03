@@ -3,26 +3,35 @@
     <h2>Licitações do Dia</h2>
 
     <div class="search-bar">
-      <input
-        v-model="searchUasg"
-        type="text"
-        placeholder="Digite o código UASG"
-        @keyup.enter="applySearch"
-      />
-      <button @click="applySearch" :disabled="loading || !searchUasg.trim()">
+      <input v-model="searchUasg" type="text" placeholder="Código UASG" @keyup.enter="applySearchUasg"/>
+      <button @click="applySearchUasg" :disabled="loading || !searchUasg.trim()">
         Buscar UASG
       </button>
-      <button v-if="isSearching" @click="clearSearch" :disabled="loading">
-        Limpar
+      <button v-if="isSearchingUasg" @click="clearSearch" :disabled="loading">
+        Limpar UASG
+      </button>
+    </div>
+
+    <div class="search-bar">
+      <input v-model="searchPregao" type="text" placeholder="Número (ou parte) do Pregão" @keyup.enter="applySearchPregao"/>
+      <button @click="applySearchPregao" :disabled="loading || !searchPregao.trim()">
+        Buscar Pregão
+      </button>
+      <button v-if="isSearchingPregao" @click="clearSearch" :disabled="loading">
+        Limpar Pregão
       </button>
     </div>
 
     <div v-if="loading" class="status">Carregando...</div>
     <div v-else-if="error" class="status erro">{{ error }}</div>
-    <div v-else-if="isSearching && !loading && licitacoes.length === 0" class="status">
+
+    <div v-else-if="isSearchingUasg && !loading && licitacoes.length === 0" class="status">
       Nenhuma licitação encontrada para UASG “{{ searchUasg.trim() }}”.
     </div>
-    <div v-else-if="!isSearching && !loading && licitacoes.length === 0" class="status">
+    <div v-else-if="isSearchingPregao && !loading && licitacoes.length === 0" class="status">
+      Nenhum pregão contendo “{{ searchPregao.trim() }}” encontrado.
+    </div>
+    <div v-else-if="!isSearchingUasg && !isSearchingPregao && !loading && licitacoes.length === 0" class="status">
       Nenhuma licitação encontrada.
     </div>
 
@@ -65,7 +74,7 @@
       </div>
     </div>
 
-    <div v-if="!loading && !error && licitacoes.length > 0 && !isSearching" class="pagination">
+    <div v-if="!loading && !error && licitacoes.length > 0 && !isSearchingUasg && !isSearchingPregao" class="pagination">
       <button @click="prevPage" :disabled="page <= 1">Anterior</button>
       <span>Página {{ page }}</span>
       <button @click="nextPage">Próximo</button>
@@ -87,71 +96,91 @@
     const error = ref('')
     const page = ref(getInitialPage())
     const searchUasg = ref('')
-    const isSearching = ref(false)
+    const isSearchingUasg = ref(false)
 
-    function fetchData() {
-        loading.value = true
-        error.value   = ''
-        let url = ''
+    const searchPregao = ref('')
+    const isSearchingPregao = ref(false)
 
-        if (isSearching.value) {
-            url = `/api/licitacoes/uasg/${encodeURIComponent(searchUasg.value.trim())}`
+    async function fetchData() {
+    loading.value = true
+    error.value = ''
+    licitacoes.value = []
+
+    try {
+        if (isSearchingUasg.value) {
+            const resp = await fetch(
+            `/api/licitacoes/uasg/${encodeURIComponent(searchUasg.value.trim())}`)
+
+            if (resp.status === 404) {
+                licitacoes.value = []
+            } else if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}`)
+            } else {
+                licitacoes.value = await resp.json()
+            }
+        } else if (isSearchingPregao.value) {
+            const termo = encodeURIComponent(searchPregao.value.trim())
+            const resp = await fetch(`/api/licitacoes/pregao?numero=${termo}`)
+            if (resp.status === 404) {
+                licitacoes.value = []
+            } else if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}`)
+            } else {
+                licitacoes.value = await resp.json()
+            }
         } else {
-            url = '/api/licitacoes'
-            if (page.value > 1) {
-            url += `?pagina=${page.value}`
+            const resp = await fetch(`/api/licitacoes?pagina=${page.value}`)
+            if (resp.status === 404) {
+                licitacoes.value = []
+            } else if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}`)
+            } else {
+                licitacoes.value = await resp.json()
             }
         }
+    } catch (err) {
+        error.value      = 'Falha ao carregar: ' + err.message
+        licitacoes.value = []
+    } finally {
+        loading.value = false
 
-        fetch(url)
-        .then(resp => {
-            if (resp.status === 404) {
-            licitacoes.value = []
-            return null
-            }
-            if (!resp.ok) {
-            throw new Error(`HTTP ${resp.status}`)
-            }
-            return resp.json()
-        })
-        .then(json => {
-            if (json === null) {
-            return
-            }
-            if (json.error) {
-            error.value = json.error
-            licitacoes.value = []
-            } else {
-            licitacoes.value = json
-            }
-        })
-        .catch(err => {
-            error.value = 'Falha ao carregar: ' + err.message
-            licitacoes.value = []
-        })
-        .finally(() => {
-            loading.value = false
-            let newUrl = window.location.pathname
-            if (isSearching.value) {
-            newUrl += `?uasg=${encodeURIComponent(searchUasg.value.trim())}`
-            } else if (page.value > 1) {
-            newUrl += `?pagina=${page.value}`
-            }
-            window.history.replaceState(null, '', newUrl)
-        })
+        let newUrl = window.location.pathname
+        if (isSearchingUasg.value) {
+        newUrl += `?uasg=${encodeURIComponent(searchUasg.value.trim())}`
+        }
+        else if (isSearchingPregao.value) {
+        newUrl += `?numero=${encodeURIComponent(searchPregao.value.trim())}`
+        }
+        else if (page.value > 1) {
+        newUrl += `?pagina=${page.value}`
+        }
+        window.history.replaceState(null, '', newUrl)
+    }
     }
 
-    function applySearch() {
-        const term = searchUasg.value.trim()
-        if (!term) return
-        isSearching.value = true
+    function applySearchUasg() {
+        const termo = searchUasg.value.trim()
+        if (!termo) return
+        isSearchingUasg.value = true
+        isSearchingPregao.value = false
+        page.value = 1
+        fetchData()
+    }
+
+    function applySearchPregao() {
+        const termo = searchPregao.value.trim()
+        if (!termo) return
+        isSearchingPregao.value = true
+        isSearchingUasg.value = false
         page.value = 1
         fetchData()
     }
 
     function clearSearch() {
-        isSearching.value = false
+        isSearchingUasg.value = false
+        isSearchingPregao.value = false
         searchUasg.value = ''
+        searchPregao.value = ''
         page.value = 1
         fetchData()
     }
@@ -169,11 +198,16 @@
     }
 
     onMounted(() => {
-        const params   = new URLSearchParams(window.location.search)
+        const params = new URLSearchParams(window.location.search)
         const uasgParam = params.get('uasg')
+        const pregParam = params.get('numero')
         if (uasgParam) {
-            searchUasg.value  = uasgParam
-            isSearching.value = true
+            searchUasg.value = uasgParam
+            isSearchingUasg.value = true
+        }
+        else if (pregParam) {
+            searchPregao.value = pregParam
+            isSearchingPregao.value = true
         }
         fetchData()
     })
@@ -209,6 +243,7 @@
         border: 1px solid #007bff;
         background: #007bff;
         color: #fff;
+        width: 150px;
         border-radius: 4px;
         cursor: pointer;
     }
@@ -236,18 +271,6 @@
     @media (max-width: 1100px) {
         .lista-cards {
             grid-template-columns: repeat(3, 1fr);
-        }
-    }
-
-    @media (max-width: 800px) {
-        .lista-cards {
-            grid-template-columns: repeat(2, 1fr);
-        }
-    }
-
-    @media (max-width: 600px) {
-        .lista-cards {
-            grid-template-columns: repeat(1, 1fr);
         }
     }
 
