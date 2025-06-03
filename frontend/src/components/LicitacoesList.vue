@@ -38,6 +38,15 @@
     <div v-else class="lista-cards">
       <div class="card" v-for="item in licitacoes" :key="item.ordem + '-' + item.uasg + '-' + item.modalidade_numero">
         <div class="card-header">
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              :value="itemKey(item)"
+              v-model="vistos"
+              @change="atualizaLocalStorage"
+            />
+            Visto
+          </label>
           <span class="ordem">#{{ item.ordem }}</span>
           <span class="uasg">UASG: {{ item.uasg }}</span>
         </div>
@@ -83,273 +92,312 @@
 </template>
 
 <script setup>
-    import { ref, onMounted } from 'vue'
+  import { ref, onMounted } from 'vue'
 
-    function getInitialPage() {
-        const params = new URLSearchParams(window.location.search)
-        const p = parseInt(params.get('pagina'))
-        return isNaN(p) || p < 1 ? 1 : p
+  function getInitialPage() {
+    const params = new URLSearchParams(window.location.search)
+    const p = parseInt(params.get('pagina'))
+    return isNaN(p) || p < 1 ? 1 : p
+  }
+
+  const licitacoes = ref([])
+  const loading = ref(true)
+  const error = ref('')
+  const page = ref(getInitialPage())
+  const searchUasg = ref('')
+  const isSearchingUasg = ref(false)
+  const searchPregao = ref('')
+  const isSearchingPregao = ref(false)
+
+  const vistos = ref([])
+
+  function itemKey(item) {
+    return `${item.ordem}-${item.uasg}`
+  }
+
+  function carregaVistosDoLocalStorage() {
+    try {
+      const raw = localStorage.getItem('licitacoesVistas')
+      if (raw) {
+        vistos.value = JSON.parse(raw)
+      }
+    } catch {
+      vistos.value = []
     }
+  }
 
-    const licitacoes = ref([])
-    const loading = ref(true)
-    const error = ref('')
-    const page = ref(getInitialPage())
-    const searchUasg = ref('')
-    const isSearchingUasg = ref(false)
+  function atualizaLocalStorage() {
+    localStorage.setItem('licitacoesVistas', JSON.stringify(vistos.value))
+  }
 
-    const searchPregao = ref('')
-    const isSearchingPregao = ref(false)
-
-    async function fetchData() {
+  async function fetchData() {
     loading.value = true
     error.value = ''
     licitacoes.value = []
 
     try {
-        if (isSearchingUasg.value) {
-            const resp = await fetch(
-            `/api/licitacoes/uasg/${encodeURIComponent(searchUasg.value.trim())}`)
+      if (isSearchingUasg.value) {
+        const resp = await fetch(
+          `/api/licitacoes/uasg/${encodeURIComponent(searchUasg.value.trim())}`)
 
-            if (resp.status === 404) {
-                licitacoes.value = []
-            } else if (!resp.ok) {
-                throw new Error(`HTTP ${resp.status}`)
-            } else {
-                licitacoes.value = await resp.json()
-            }
-        } else if (isSearchingPregao.value) {
-            const termo = encodeURIComponent(searchPregao.value.trim())
-            const resp = await fetch(`/api/licitacoes/pregao?numero=${termo}`)
-            if (resp.status === 404) {
-                licitacoes.value = []
-            } else if (!resp.ok) {
-                throw new Error(`HTTP ${resp.status}`)
-            } else {
-                licitacoes.value = await resp.json()
-            }
+        if (resp.status === 404) {
+          licitacoes.value = []
+        } else if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`)
         } else {
-            const resp = await fetch(`/api/licitacoes?pagina=${page.value}`)
-            if (resp.status === 404) {
-                licitacoes.value = []
-            } else if (!resp.ok) {
-                throw new Error(`HTTP ${resp.status}`)
-            } else {
-                licitacoes.value = await resp.json()
-            }
+          licitacoes.value = await resp.json()
         }
+      } else if (isSearchingPregao.value) {
+        const termo = encodeURIComponent(searchPregao.value.trim())
+        const resp = await fetch(`/api/licitacoes/pregao?numero=${termo}`)
+        if (resp.status === 404) {
+          licitacoes.value = []
+        } else if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`)
+        } else {
+          licitacoes.value = await resp.json()
+        }
+      } else {
+        const resp = await fetch(`/api/licitacoes?pagina=${page.value}`)
+        if (resp.status === 404) {
+          licitacoes.value = []
+        } else if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`)
+        } else {
+          licitacoes.value = await resp.json()
+        }
+      }
     } catch (err) {
-        error.value      = 'Falha ao carregar: ' + err.message
-        licitacoes.value = []
+      error.value = 'Falha ao carregar: ' + err.message
+      licitacoes.value = []
     } finally {
-        loading.value = false
+      loading.value = false
 
-        let newUrl = window.location.pathname
-        if (isSearchingUasg.value) {
+      let newUrl = window.location.pathname
+      if (isSearchingUasg.value) {
         newUrl += `?uasg=${encodeURIComponent(searchUasg.value.trim())}`
-        }
-        else if (isSearchingPregao.value) {
+      } else if (isSearchingPregao.value) {
         newUrl += `?numero=${encodeURIComponent(searchPregao.value.trim())}`
-        }
-        else if (page.value > 1) {
+      } else if (page.value > 1) {
         newUrl += `?pagina=${page.value}`
-        }
-        window.history.replaceState(null, '', newUrl)
+      }
+      window.history.replaceState(null, '', newUrl)
     }
-    }
+  }
 
-    function applySearchUasg() {
-        const termo = searchUasg.value.trim()
-        if (!termo) return
-        isSearchingUasg.value = true
-        isSearchingPregao.value = false
-        page.value = 1
-        fetchData()
-    }
+  function applySearchUasg() {
+    const termo = searchUasg.value.trim()
+    if (!termo) return
+    isSearchingUasg.value = true
+    isSearchingPregao.value = false
+    page.value = 1
+    fetchData()
+  }
 
-    function applySearchPregao() {
-        const termo = searchPregao.value.trim()
-        if (!termo) return
-        isSearchingPregao.value = true
-        isSearchingUasg.value = false
-        page.value = 1
-        fetchData()
-    }
+  function applySearchPregao() {
+    const termo = searchPregao.value.trim()
+    if (!termo) return
+    isSearchingPregao.value = true
+    isSearchingUasg.value = false
+    page.value = 1
+    fetchData()
+  }
 
-    function clearSearch() {
-        isSearchingUasg.value = false
-        isSearchingPregao.value = false
-        searchUasg.value = ''
-        searchPregao.value = ''
-        page.value = 1
-        fetchData()
-    }
+  function clearSearch() {
+    isSearchingUasg.value = false
+    isSearchingPregao.value = false
+    searchUasg.value = ''
+    searchPregao.value = ''
+    page.value = 1
+    fetchData()
+  }
 
-    function nextPage() {
-        page.value++
-        fetchData()
-    }
+  function nextPage() {
+    page.value++
+    fetchData()
+  }
 
-    function prevPage() {
-        if (page.value > 1) {
-            page.value--
-            fetchData()
-        }
+  function prevPage() {
+    if (page.value > 1) {
+      page.value--
+      fetchData()
     }
+  }
 
-    onMounted(() => {
-        const params = new URLSearchParams(window.location.search)
-        const uasgParam = params.get('uasg')
-        const pregParam = params.get('numero')
-        if (uasgParam) {
-            searchUasg.value = uasgParam
-            isSearchingUasg.value = true
-        }
-        else if (pregParam) {
-            searchPregao.value = pregParam
-            isSearchingPregao.value = true
-        }
-        fetchData()
-    })
+  function limparSeMudouDia() {
+    const hoje = new Date().toISOString().slice(0, 10) 
+    const ultimaData = localStorage.getItem('licitacoesVistasData')
+
+    if (ultimaData !== hoje) {
+      localStorage.removeItem('licitacoesVistas')
+      localStorage.setItem('licitacoesVistasData', hoje)
+      vistos.value = []
+    }
+  }
+
+  onMounted(() => {
+    const params = new URLSearchParams(window.location.search)
+    const uasgParam = params.get('uasg')
+    const pregParam = params.get('numero')
+    if (uasgParam) {
+      searchUasg.value = uasgParam
+      isSearchingUasg.value = true
+    } else if (pregParam) {
+      searchPregao.value = pregParam
+      isSearchingPregao.value = true
+    }
+    carregaVistosDoLocalStorage()
+    fetchData()
+    limparSeMudouDia()
+  })
 </script>
 
 <style scoped>
-    h2 {
-        margin-bottom: 1rem;
-        font-size: 1.5rem;
-    }
+  h2 {
+    margin-bottom: 1rem;
+    font-size: 1.5rem;
+  }
 
-    .licitacoes-list {
-        margin: 20px;
-    }
+  .licitacoes-list {
+    margin: 20px;
+  }
 
-    .search-bar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.5rem;
-        margin-bottom: 1rem;
-    }
+  .search-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
 
-    .search-bar input {
-        flex: 1;
-        min-width: 200px;
-        padding: 0.5rem;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-    }
+  .search-bar input {
+    flex: 1;
+    min-width: 200px;
+    padding: 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+  }
 
-    .search-bar button {
-        padding: 0.5rem 1rem;
-        border: 1px solid #007bff;
-        background: #007bff;
-        color: #fff;
-        width: 150px;
-        border-radius: 4px;
-        cursor: pointer;
-    }
+  .search-bar button {
+    padding: 0.5rem 1rem;
+    border: 1px solid #007bff;
+    background: #007bff;
+    color: #fff;
+    width: 150px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
 
-    .search-bar button:disabled {
-        opacity: 0.5;
-        cursor: default;
-    }
+  .search-bar button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
 
-    .status {
-        margin: 1rem 0;
-        font-style: italic;
-    }
+  .status {
+    margin: 1rem 0;
+    font-style: italic;
+  }
 
-    .erro {
-        color: red;
-    }
+  .erro {
+    color: red;
+  }
 
+  .lista-cards {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1rem;
+  }
+
+  @media (max-width: 1100px) {
     .lista-cards {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 1rem;
+      grid-template-columns: repeat(3, 1fr);
     }
+  }
 
-    @media (max-width: 1100px) {
-        .lista-cards {
-            grid-template-columns: repeat(3, 1fr);
-        }
-    }
+  .card {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  }
 
-    .card {
-        background: #fff;
-        border: 1px solid #ddd;
-        border-radius: 6px;
-        display: flex;
-        flex-direction: column;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-    }
+  .card-header {
+    background: #f5f5f5;
+    padding: 0.5rem 1rem;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    font-weight: bold;
+    font-size: 0.9rem;
+  }
 
-    .card-header {
-        background: #f5f5f5;
-        padding: 0.5rem 1rem;
-        border-bottom: 1px solid #ddd;
-        display: flex;
-        justify-content: space-between;
-        font-weight: bold;
-        font-size: 0.9rem;
-    }
+  .checkbox-label {
+    display: flex;
+    align-items: center;
+  }
 
-    .card-body {
-        padding: 1rem;
-        flex: 1;
-    }
+  .checkbox-label input {
+    margin-right: 0.5rem;
+  }
 
-    .campo {
-        margin-bottom: 0.5rem;
-        font-size: 0.9rem;
-    }
+  .card-body {
+    padding: 1rem;
+    flex: 1;
+  }
 
-    .card-footer {
-        padding: 0.75rem 1rem;
-        border-top: 1px solid #ddd;
-        text-align: right;
-    }
+  .campo {
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+  }
 
-    .btn-download {
-        display: inline-block;
-        padding: 0.4rem 0.8rem;
-        background: #007bff;
-        color: #fff;
-        border-radius: 4px;
-        text-decoration: none;
-        font-size: 0.9rem;
-    }
+  .card-footer {
+    padding: 0.75rem 1rem;
+    border-top: 1px solid #ddd;
+    text-align: right;
+  }
 
-    .btn-download:hover {
-        background: #0056b3;
-    }
+  .btn-download {
+    display: inline-block;
+    padding: 0.4rem 0.8rem;
+    background: #007bff;
+    color: #fff;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 0.9rem;
+  }
 
-    .sem-download {
-        font-size: 0.9rem;
-        color: #888;
-    }
+  .btn-download:hover {
+    background: #0056b3;
+  }
 
-    .pagination {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        margin-top: 1.5rem;
-        gap: 0.5rem;
-    }
+  .sem-download {
+    font-size: 0.9rem;
+    color: #888;
+  }
 
-    .pagination button {
-        padding: 0.4rem 0.8rem;
-        border: 1px solid #ccc;
-        background: #fff;
-        border-radius: 4px;
-        cursor: pointer;
-    }
+  .pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-top: 1.5rem;
+    gap: 0.5rem;
+  }
 
-    .pagination button:disabled {
-        opacity: 0.5;
-        cursor: default;
-    }
+  .pagination button {
+    padding: 0.4rem 0.8rem;
+    border: 1px solid #ccc;
+    background: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+  }
 
-    .pagination span {
-        font-size: 0.9rem;
-    }
+  .pagination button:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  .pagination span {
+    font-size: 0.9rem;
+  }
 </style>
