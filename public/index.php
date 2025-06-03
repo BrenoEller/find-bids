@@ -2,6 +2,11 @@
 require __DIR__ . '/../vendor/autoload.php';
 require __DIR__ . '/../app/Core/Router.php';
 
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+
+
 use App\Core\Router;
 
 $router = new Router();
