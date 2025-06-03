@@ -337,24 +337,25 @@ class LicitacaoService
     public function listarPorNumeroPregao(string $numeroPregao): array
     {
         $numeroPregao = trim($numeroPregao);
+        
+        $pattern = '/\bNº\s*' . preg_quote($numeroPregao, '/') . '\b/i';
+
         $baseUrl = 'https://comprasnet.gov.br/ConsultaLicitacoes/ConsLicitacaoDia.asp';
+        $resultados = [];
+
         $pagina = 1;
         $html1 = $this->fetchHtml($baseUrl . '?Pagina=1');
         if ($html1 === false) {
-            return []; 
+            return [];
         }
 
         $itensPagina1 = $this->extractFormsFromHtml($html1);
         if (!empty($itensPagina1)) {
             foreach ($itensPagina1 as $item) {
-                if (
-                    isset($item['modalidade_numero']) &&
-                    preg_match(
-                        '/\bNº\s*' . preg_quote($numeroPregao, '/') . '\b/i',
-                        $item['modalidade_numero']
-                    )
+                if (isset($item['modalidade_numero']) &&
+                    preg_match($pattern, $item['modalidade_numero'])
                 ) {
-                    return [$item];
+                    $resultados[] = $item;
                 }
             }
         }
@@ -380,20 +381,14 @@ class LicitacaoService
             }
 
             foreach ($itensDaPagina as $item) {
-                if (
-                    isset($item['modalidade_numero']) &&
-                    preg_match(
-                        '/\bNº\s*' . preg_quote($numeroPregao, '/') . '\b/i',
-                        $item['modalidade_numero']
-                    )
-                ) {
-                    return [$item];
+                if (isset($item['modalidade_numero']) && preg_match($pattern, $item['modalidade_numero'])) {
+                    $resultados[] = $item;
                 }
             }
 
             $pagina++;
         }
 
-        return [];
+        return $resultados;
     }
 }
