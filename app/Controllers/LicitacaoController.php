@@ -5,11 +5,21 @@ use App\Services\LicitacaoService;
 
 class LicitacaoController
 {
+    /**
+     * Ponto único de criação do serviço, para que testes possam sobrescrevê-lo.
+     */
+    protected function createService(): LicitacaoService
+    {
+        return new LicitacaoService();
+    }
+
     public function index(): string
     {
-        $pagina = isset($_GET['pagina']) && is_numeric($_GET['pagina']) ? (int) $_GET['pagina'] : null;
+        $pagina = isset($_GET['pagina']) && is_numeric($_GET['pagina'])
+                    ? (int) $_GET['pagina']
+                    : null;
 
-        $service = new LicitacaoService();
+        $service = $this->createService();
 
         if ($pagina !== null) {
             $itens = $service->listarPorPagina($pagina);
@@ -39,8 +49,8 @@ class LicitacaoController
             );
         }
 
-        $service = new LicitacaoService();
-        $itens = $service->listarPorUasg($codigoUasg);
+        $service = $this->createService();
+        $itens   = $service->listarPorUasg($codigoUasg);
 
         if (empty($itens)) {
             http_response_code(404);
@@ -65,7 +75,7 @@ class LicitacaoController
             );
         }
 
-        $service = new LicitacaoService();
+        $service = $this->createService();
         $itens   = $service->listarPorNumeroPregao($numeroPregao);
 
         if (empty($itens)) {

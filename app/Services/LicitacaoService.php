@@ -54,7 +54,7 @@ class LicitacaoService
     /**
      * (lógica que varre TODAS as páginas, via getLastPageNumber e multiFetch ou fallback iterativo. Serve apenas para quem chamar listasDoDia().)
     */
-    private function scrapeAllPages(): array
+    public function scrapeAllPages(): array
     {
         return [];
     }
@@ -62,7 +62,7 @@ class LicitacaoService
     /**
      * Faz um cURL simples para a URL e retorna o HTML ou false.
      */
-    private function fetchHtml(string $url)
+    public function fetchHtml(string $url)
     {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $url);
@@ -87,7 +87,7 @@ class LicitacaoService
      * Recebe um HTML de página de resultados e extrai cada <form> dentro de <table class="tex3">.
      * Retorna um array de itens associativos com os campos (ordem, orgao, uasg, modalidade_numero, etc.).
      */
-    private function extractFormsFromHtml(string $html): array
+    public function extractFormsFromHtml(string $html): array
     {
         libxml_use_internal_errors(true);
         $dom = new \DOMDocument();
@@ -110,7 +110,7 @@ class LicitacaoService
     /**
      * Extrai cada campo de um <form> específico (ordem, orgao, uasg, modalidade_numero, objeto, etc.).
      */
-    private function extrairItemDeForm(\DOMElement $form, \DOMDocument $dom): array
+    public function extrairItemDeForm(\DOMElement $form, \DOMDocument $dom): array
     {
         $innerHtml = '';
         foreach ($form->childNodes as $child) {
@@ -269,7 +269,7 @@ class LicitacaoService
     /**
      * Normaliza espaços em branco (incluindo NBSP), tabs e quebras de linha
     */
-    private function normalizeSpaces(string $str): string
+    public function normalizeSpaces(string $str): string
     {
         $str = preg_replace('/[\s\x{00A0}]+/u', ' ', $str);
         return trim($str, " \t\n\r\0\x0B\x{00A0}");
