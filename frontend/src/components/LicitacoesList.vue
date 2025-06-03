@@ -1,14 +1,33 @@
 <template>
-  <div style="margin: 20px;">
+  <div class="licitacoes-list">
     <h2>Licitações do Dia</h2>
+
+    <div class="search-bar">
+      <input
+        v-model="searchUasg"
+        type="text"
+        placeholder="Digite o código UASG"
+        @keyup.enter="applySearch"
+      />
+      <button @click="applySearch" :disabled="loading || !searchUasg.trim()">
+        Buscar UASG
+      </button>
+      <button v-if="isSearching" @click="clearSearch" :disabled="loading">
+        Limpar
+      </button>
+    </div>
 
     <div v-if="loading" class="status">Carregando...</div>
     <div v-else-if="error" class="status erro">{{ error }}</div>
-    <div v-else-if="licitacoes.length === 0" class="status">Nenhuma licitação encontrada.</div>
+    <div v-else-if="isSearching && !loading && licitacoes.length === 0" class="status">
+      Nenhuma licitação encontrada para UASG “{{ searchUasg.trim() }}”.
+    </div>
+    <div v-else-if="!isSearching && !loading && licitacoes.length === 0" class="status">
+      Nenhuma licitação encontrada.
+    </div>
 
     <div v-else class="lista-cards">
-      <div class="card" v-for="item in licitacoes" :key="item.ordem + '-' + item.uasg"
-      >
+      <div class="card" v-for="item in licitacoes" :key="item.ordem + '-' + item.uasg + '-' + item.modalidade_numero">
         <div class="card-header">
           <span class="ordem">#{{ item.ordem }}</span>
           <span class="uasg">UASG: {{ item.uasg }}</span>
@@ -45,13 +64,13 @@
         </div>
       </div>
     </div>
-  </div>
 
-    <div v-if="!loading && !error && licitacoes.length > 0" class="pagination">
-        <button @click="prevPage" :disabled="page <= 1">Anterior</button>
-        <span>Página {{ page }}</span>
-        <button @click="nextPage">Próximo</button>
+    <div v-if="!loading && !error && licitacoes.length > 0 && !isSearching" class="pagination">
+      <button @click="prevPage" :disabled="page <= 1">Anterior</button>
+      <span>Página {{ page }}</span>
+      <button @click="nextPage">Próximo</button>
     </div>
+  </div>
 </template>
 
 <script setup>
@@ -67,40 +86,74 @@
     const loading = ref(true)
     const error = ref('')
     const page = ref(getInitialPage())
+    const searchUasg = ref('')
+    const isSearching = ref(false)
 
     function fetchData() {
         loading.value = true
-        error.value = ''
+        error.value   = ''
+        let url = ''
 
-        let url = '/api/licitacoes'
-
-        if (page.value > 1) {
+        if (isSearching.value) {
+            url = `/api/licitacoes/uasg/${encodeURIComponent(searchUasg.value.trim())}`
+        } else {
+            url = '/api/licitacoes'
+            if (page.value > 1) {
             url += `?pagina=${page.value}`
+            }
         }
 
         fetch(url)
-            .then(resp => {
-            if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-            return resp.json()
-            })
-            .then(json => {
-            if (json.error) {
-                error.value = json.error
-                licitacoes.value = []
-            } else {
-                licitacoes.value = json
+        .then(resp => {
+            if (resp.status === 404) {
+            licitacoes.value = []
+            return null
             }
-            })
-            .catch(err => {
+            if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}`)
+            }
+            return resp.json()
+        })
+        .then(json => {
+            if (json === null) {
+            return
+            }
+            if (json.error) {
+            error.value = json.error
+            licitacoes.value = []
+            } else {
+            licitacoes.value = json
+            }
+        })
+        .catch(err => {
             error.value = 'Falha ao carregar: ' + err.message
-            })
-            .finally(() => {
+            licitacoes.value = []
+        })
+        .finally(() => {
             loading.value = false
-            const newUrl = page.value > 1
-                ? `${window.location.pathname}?pagina=${page.value}`
-                : window.location.pathname
+            let newUrl = window.location.pathname
+            if (isSearching.value) {
+            newUrl += `?uasg=${encodeURIComponent(searchUasg.value.trim())}`
+            } else if (page.value > 1) {
+            newUrl += `?pagina=${page.value}`
+            }
             window.history.replaceState(null, '', newUrl)
-            })
+        })
+    }
+
+    function applySearch() {
+        const term = searchUasg.value.trim()
+        if (!term) return
+        isSearching.value = true
+        page.value = 1
+        fetchData()
+    }
+
+    function clearSearch() {
+        isSearching.value = false
+        searchUasg.value = ''
+        page.value = 1
+        fetchData()
     }
 
     function nextPage() {
@@ -116,6 +169,12 @@
     }
 
     onMounted(() => {
+        const params   = new URLSearchParams(window.location.search)
+        const uasgParam = params.get('uasg')
+        if (uasgParam) {
+            searchUasg.value  = uasgParam
+            isSearching.value = true
+        }
         fetchData()
     })
 </script>
@@ -124,6 +183,39 @@
     h2 {
         margin-bottom: 1rem;
         font-size: 1.5rem;
+    }
+
+    .licitacoes-list {
+        margin: 20px;
+    }
+
+    .search-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .search-bar input {
+        flex: 1;
+        min-width: 200px;
+        padding: 0.5rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+    }
+
+    .search-bar button {
+        padding: 0.5rem 1rem;
+        border: 1px solid #007bff;
+        background: #007bff;
+        color: #fff;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .search-bar button:disabled {
+        opacity: 0.5;
+        cursor: default;
     }
 
     .status {
@@ -142,21 +234,21 @@
     }
 
     @media (max-width: 1100px) {
-    .lista-cards {
-        grid-template-columns: repeat(3, 1fr);
-    }
+        .lista-cards {
+            grid-template-columns: repeat(3, 1fr);
+        }
     }
 
     @media (max-width: 800px) {
-    .lista-cards {
-        grid-template-columns: repeat(2, 1fr);
-    }
+        .lista-cards {
+            grid-template-columns: repeat(2, 1fr);
+        }
     }
 
     @media (max-width: 600px) {
-    .lista-cards {
-        grid-template-columns: repeat(1, 1fr);
-    }
+        .lista-cards {
+            grid-template-columns: repeat(1, 1fr);
+        }
     }
 
     .card {
@@ -186,10 +278,6 @@
     .campo {
         margin-bottom: 0.5rem;
         font-size: 0.9rem;
-
-        strong {
-            font-weight: bold;
-        }
     }
 
     .card-footer {
@@ -218,11 +306,11 @@
     }
 
     .pagination {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    margin: 1.5rem;
-    gap: 0.5rem;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-top: 1.5rem;
+        gap: 0.5rem;
     }
 
     .pagination button {
