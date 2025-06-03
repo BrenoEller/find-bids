@@ -313,6 +313,18 @@
     }
   }
 
+   @media (max-width: 800px) {
+    .lista-cards {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+   @media (max-width: 600px) {
+    .lista-cards {
+      grid-template-columns: repeat(1, 1fr);
+    }
+  }
+
   .card {
     background: #fff;
     border: 1px solid #ddd;
